@@ -1,0 +1,4 @@
+/public/devel/23-24/clion/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/public/devel/23-24/clion/bin/ninja/linux/x64/ninja -G Ninja -S /home/s5525995/PutPixel -B /home/s5525995/PutPixel/cmake-build-debug
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/s5525995/PutPixel/cmake-build-debug
