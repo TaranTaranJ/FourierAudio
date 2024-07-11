@@ -3,7 +3,7 @@
 #include <fstream>
 #include <vector>
 
-const int WINDOW_WIDTH = 800;
+const int WINDOW_WIDTH = 1800;
 const int WINDOW_HEIGHT = 600;
 
 class PCMVisualizer {
