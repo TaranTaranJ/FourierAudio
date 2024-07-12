@@ -9,6 +9,7 @@ project(PutPixel_BuildALL)
 find_package(SDL2 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(FFTW3 CONFIG REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,4 +19,4 @@ add_executable(PutPixel)
 target_include_directories(PutPixel PRIVATE  include)
 target_sources(PutPixel PRIVATE main.cpp)
 
-target_link_libraries(PutPixel PRIVATE  SDL2::SDL2 SDL2::SDL2main OpenGL::GL glm::glm)
+target_link_libraries(PutPixel PRIVATE  SDL2::SDL2 SDL2::SDL2main OpenGL::GL glm::glm FFTW3::fftw3)
