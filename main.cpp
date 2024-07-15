@@ -4,9 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <complex>
-#include <fftw3.h>
 
-// Application window dimensions
 const int WINDOW_WIDTH = 1800;
 const int WINDOW_HEIGHT = 600;
 
@@ -20,19 +18,18 @@ public:
 
 private:
     void loadPCMData(const char* filename);
-    void renderWaveform();
-    void renderFrequencyDomain();
     void computeFFT();
     void FFT1D(std::vector<complexArr>& x);
+    void renderWaveform();
+    void renderFrequencyDomain();
 
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
     std::vector<short> m_pcmSamples;
     std::vector<complexArr> m_fftResult;
-    bool displayFrequencyDomain;
 };
 
-PCMVisualizer::PCMVisualizer(const char* filename) : displayFrequencyDomain(false) {
+PCMVisualizer::PCMVisualizer(const char* filename) {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         std::cerr << "Failed to initialize SDL: " << SDL_GetError() << std::endl;
         exit(1);
@@ -73,12 +70,26 @@ void PCMVisualizer::loadPCMData(const char* filename) {
         exit(1);
     }
 
-    std::vector<char> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    // Determine the file size
+    file.seekg(0, std::ios::end);
+    std::streampos fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // Read the entire file into a buffer
+    std::vector<char> buffer(fileSize);
+    if (!file.read(buffer.data(), fileSize)) {
+        std::cerr << "Error reading file: " << filename << std::endl;
+        file.close();
+        exit(1);
+    }
     file.close();
 
-    m_pcmSamples.resize(buffer.size() / 2);
-    for (size_t i = 0; i < buffer.size(); i += 2) {
-        m_pcmSamples[i / 2] = static_cast<short>(buffer[i] | (buffer[i + 1] << 8));
+    // Convert the buffer to PCM samples
+    size_t numSamples = fileSize / 2; // Each sample is 2 bytes (16 bits)
+    m_pcmSamples.resize(numSamples);
+
+    for (size_t i = 0; i < numSamples; ++i) {
+        m_pcmSamples[i] = static_cast<short>((buffer[i * 2] & 0xFF) | (buffer[i * 2 + 1] << 8));
     }
 
     if (m_pcmSamples.empty()) {
@@ -87,6 +98,21 @@ void PCMVisualizer::loadPCMData(const char* filename) {
     }
 
     std::cout << "Loaded " << m_pcmSamples.size() << " PCM samples." << std::endl;
+}
+
+
+void PCMVisualizer::computeFFT() {
+    size_t N = m_pcmSamples.size();
+    std::vector<complexArr> complexSamples(N);
+
+    for (size_t i = 0; i < N; ++i) {
+        complexSamples[i] = static_cast<double>(m_pcmSamples[i]);
+    }
+
+    FFT1D(complexSamples);
+    m_fftResult = complexSamples;
+
+    std::cout << "Computed FFT of " << N << " samples." << std::endl;
 }
 
 void PCMVisualizer::FFT1D(std::vector<complexArr>& x) {
@@ -110,19 +136,6 @@ void PCMVisualizer::FFT1D(std::vector<complexArr>& x) {
     }
 }
 
-void PCMVisualizer::computeFFT() {
-    size_t N = m_pcmSamples.size();
-    std::vector<complexArr> complexSamples(N);
-
-    for (size_t i = 0; i < N; ++i) {
-        complexSamples[i] = static_cast<double>(m_pcmSamples[i]);
-    }
-
-    FFT1D(complexSamples);
-    m_fftResult = complexSamples;
-    std::cout << "Computed FFT of " << N << " samples." << std::endl;
-}
-
 void PCMVisualizer::renderWaveform() {
     SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
     SDL_RenderClear(m_renderer);
@@ -130,17 +143,20 @@ void PCMVisualizer::renderWaveform() {
     SDL_SetRenderDrawColor(m_renderer, 0, 255, 0, 255);
 
     int mid = WINDOW_HEIGHT / 2;
-    size_t step = m_pcmSamples.size() / WINDOW_WIDTH;
+    size_t numSamples = m_pcmSamples.size();
+    float step = static_cast<float>(numSamples) / static_cast<float>(WINDOW_WIDTH);
 
     int x1 = 0;
-    int sampleIndex = x1 * step;
-    int sample = m_pcmSamples[sampleIndex] / (32768 / mid);
-    int y1 = mid - sample;
+    int sampleIndex = 0;
+    float scale = static_cast<float>(mid) / 32768.0f; // Scale factor for y-axis
+
+    int y1 = mid - static_cast<int>(m_pcmSamples[sampleIndex] * scale);
 
     for (int x2 = 1; x2 < WINDOW_WIDTH; ++x2) {
-        sampleIndex = x2 * step;
-        sample = m_pcmSamples[sampleIndex] / (32768 / mid);
-        int y2 = mid - sample;
+        sampleIndex = static_cast<int>(x2 * step);
+        if (sampleIndex >= numSamples) break; // Ensure we don't access out of bounds
+
+        int y2 = mid - static_cast<int>(m_pcmSamples[sampleIndex] * scale);
 
         SDL_RenderDrawLine(m_renderer, x1, y1, x2, y2);
 
@@ -150,40 +166,53 @@ void PCMVisualizer::renderWaveform() {
 
     SDL_RenderPresent(m_renderer);
 }
+
+
+
 
 void PCMVisualizer::renderFrequencyDomain() {
     SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
     SDL_RenderClear(m_renderer);
 
-    SDL_SetRenderDrawColor(m_renderer, 0, 0, 255, 255);
+    SDL_SetRenderDrawColor(m_renderer, 0, 255, 0, 255);
 
     int mid = WINDOW_HEIGHT / 2;
-    size_t step = m_fftResult.size() / WINDOW_WIDTH;
+    size_t numBins = m_fftResult.size() / 2;
+    float x_scale = static_cast<float>(WINDOW_WIDTH) / static_cast<float>(numBins);
 
-    int x1 = 0;
-    int sampleIndex = x1 * step;
-    double magnitudeValue = std::abs(m_fftResult[sampleIndex]) / (m_fftResult.size() / mid);
-    int y1 = mid - static_cast<int>(magnitudeValue);
+    float maxMagnitude = 0.0f;
+    for (size_t i = 0; i < numBins; ++i) {
+        float magnitude = std::abs(m_fftResult[i]);
+        if (magnitude > maxMagnitude) {
+            maxMagnitude = magnitude;
+        }
+    }
 
-    for (int x2 = 1; x2 < WINDOW_WIDTH; ++x2) {
-        sampleIndex = x2 * step;
-        magnitudeValue = std::abs(m_fftResult[sampleIndex]) / (m_fftResult.size() / mid);
-        int y2 = mid - static_cast<int>(magnitudeValue);
+    float y_scale = static_cast<float>(mid) / maxMagnitude;
+
+    for (size_t i = 1; i < numBins; ++i) {
+        int x1 = static_cast<int>((i - 1) * x_scale);
+        int y1 = mid - static_cast<int>(std::abs(m_fftResult[i - 1]) * y_scale);
+
+        int x2 = static_cast<int>(i * x_scale);
+        int y2 = mid - static_cast<int>(std::abs(m_fftResult[i]) * y_scale);
+
+        // Ensure y1 and y2 are within bounds
+        y1 = std::max(0, std::min(WINDOW_HEIGHT, y1));
+        y2 = std::max(0, std::min(WINDOW_HEIGHT, y2));
 
         SDL_RenderDrawLine(m_renderer, x1, y1, x2, y2);
-
-        x1 = x2;
-        y1 = y2;
     }
 
     SDL_RenderPresent(m_renderer);
 }
 
+
+
+
 void PCMVisualizer::run() {
     bool running = true;
     SDL_Event event;
-
-    Uint32 startTime = SDL_GetTicks();
 
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -192,14 +221,10 @@ void PCMVisualizer::run() {
             }
         }
 
-        Uint32 currentTime = SDL_GetTicks();
-        if (currentTime - startTime < 3000) {
-            renderWaveform();
-        } else {
-            renderFrequencyDomain();
-        }
-
-        SDL_Delay(16); // Approx. 60 FPS
+        renderWaveform();
+        SDL_Delay(3000);
+        renderFrequencyDomain();
+        SDL_Delay(3000); // Approx. 60 FPS
     }
 }
 
