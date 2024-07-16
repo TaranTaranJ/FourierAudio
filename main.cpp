@@ -4,6 +4,8 @@
 #include <vector>
 #include <cmath>
 #include <complex>
+#include <algorithm> // For std::max and std::min
+#include <iterator>  // For std::distance
 
 const int WINDOW_WIDTH = 1800;
 const int WINDOW_HEIGHT = 600;
@@ -20,6 +22,8 @@ private:
     void loadPCMData(const char* filename);
     void computeFFT();
     void FFT1D(std::vector<complexArr>& x);
+    void IFFT1D(std::vector<complexArr>& x);
+    void removeTone(double targetFrequency, double sampleRate);
     void renderWaveform();
     void renderFrequencyDomain();
 
@@ -100,7 +104,6 @@ void PCMVisualizer::loadPCMData(const char* filename) {
     std::cout << "Loaded " << m_pcmSamples.size() << " PCM samples." << std::endl;
 }
 
-
 void PCMVisualizer::computeFFT() {
     size_t N = m_pcmSamples.size();
     std::vector<complexArr> complexSamples(N);
@@ -136,6 +139,46 @@ void PCMVisualizer::FFT1D(std::vector<complexArr>& x) {
     }
 }
 
+void PCMVisualizer::IFFT1D(std::vector<complexArr>& x) {
+    // Conjugate the complex numbers
+    for (auto& elem : x) {
+        elem = std::conj(elem);
+    }
+
+    // Perform the forward FFT
+    FFT1D(x);
+
+    // Conjugate the complex numbers again
+    for (auto& elem : x) {
+        elem = std::conj(elem);
+    }
+
+    // Scale the numbers
+    size_t N = x.size();
+    for (auto& val : x) {
+        val /= N;
+    }
+}
+
+void PCMVisualizer::removeTone(double targetFrequency, double sampleRate) {
+    size_t N = m_fftResult.size();
+    size_t targetIndex = static_cast<size_t>(targetFrequency * N / sampleRate);
+
+    if (targetIndex < N) {
+        m_fftResult[targetIndex] = 0;
+        if (targetIndex != 0) {
+            m_fftResult[N - targetIndex] = 0;
+        }
+    }
+
+    IFFT1D(m_fftResult);
+
+    // Convert the complex result back to PCM samples
+    for (size_t i = 0; i < N; ++i) {
+        m_pcmSamples[i] = static_cast<short>(std::real(m_fftResult[i]));
+    }
+}
+
 void PCMVisualizer::renderWaveform() {
     SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
     SDL_RenderClear(m_renderer);
@@ -167,14 +210,15 @@ void PCMVisualizer::renderWaveform() {
     SDL_RenderPresent(m_renderer);
 }
 
-
-
-
 void PCMVisualizer::renderFrequencyDomain() {
     SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
     SDL_RenderClear(m_renderer);
 
-    SDL_SetRenderDrawColor(m_renderer, 0, 255, 0, 255);
+    // Random color for frequency domain lines
+    Uint8 r = rand() % 256;
+    Uint8 g = rand() % 256;
+    Uint8 b = rand() % 256;
+    SDL_SetRenderDrawColor(m_renderer, r, g, b, 255);
 
     int mid = WINDOW_HEIGHT / 2;
     size_t numBins = m_fftResult.size() / 2;
@@ -207,9 +251,6 @@ void PCMVisualizer::renderFrequencyDomain() {
     SDL_RenderPresent(m_renderer);
 }
 
-
-
-
 void PCMVisualizer::run() {
     bool running = true;
     SDL_Event event;
@@ -224,7 +265,27 @@ void PCMVisualizer::run() {
         renderWaveform();
         SDL_Delay(3000);
         renderFrequencyDomain();
-        SDL_Delay(3000); // Approx. 60 FPS
+        SDL_Delay(3000); // Approx. 3 seconds
+
+        // Add tone removal here for demonstration
+        // Assuming a sample rate of 44100 Hz and a target frequency of 1000 Hz
+        removeTone(1000.0, 44100.0);
+        renderFrequencyDomain();
+        SDL_Delay(5000); // Approx. 5 seconds
+        renderWaveform();
+
+        // Exit the loop after the final render
+        running = false;
+    }
+
+    // Keep the window open to view the final result
+    bool viewing = true;
+    while (viewing) {
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                viewing = false;
+            }
+        }
     }
 }
 
