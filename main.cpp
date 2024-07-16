@@ -4,8 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <complex>
-#include <algorithm> // For std::max and std::min
-#include <iterator>  // For std::distance
+#include <algorithm>
 
 const int WINDOW_WIDTH = 1800;
 const int WINDOW_HEIGHT = 600;
@@ -26,6 +25,8 @@ private:
     void removeTone(double targetFrequency, double sampleRate);
     void renderWaveform();
     void renderFrequencyDomain();
+    void convertFrequencyToTimeDomain();
+    void writePCMToFile();
 
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
@@ -89,7 +90,7 @@ void PCMVisualizer::loadPCMData(const char* filename) {
     file.close();
 
     // Convert the buffer to PCM samples
-    size_t numSamples = fileSize / 2; // Each sample is 2 bytes (16 bits)
+    size_t numSamples = fileSize / sizeof(short); // Each sample is 2 bytes (16 bits)
     m_pcmSamples.resize(numSamples);
 
     for (size_t i = 0; i < numSamples; ++i) {
@@ -162,18 +163,28 @@ void PCMVisualizer::IFFT1D(std::vector<complexArr>& x) {
 
 void PCMVisualizer::removeTone(double targetFrequency, double sampleRate) {
     size_t N = m_fftResult.size();
-    size_t targetIndex = static_cast<size_t>(targetFrequency * N / sampleRate);
+    double binWidth = sampleRate / static_cast<double>(N); // Frequency resolution per bin
 
+    // Calculate the index of the target frequency in the FFT result
+    size_t targetIndex = static_cast<size_t>(targetFrequency / binWidth);
+
+    // Ensure the targetIndex is within valid bounds
     if (targetIndex < N) {
-        m_fftResult[targetIndex] = 0;
-        if (targetIndex != 0) {
+        m_fftResult[targetIndex] = 0; // Zero out the target frequency bin
+
+        // Since FFT result is symmetric, also zero out the corresponding negative frequency bin
+        if (targetIndex != 0 && targetIndex != N - 1) {
             m_fftResult[N - targetIndex] = 0;
         }
     }
+}
 
+void PCMVisualizer::convertFrequencyToTimeDomain() {
     IFFT1D(m_fftResult);
 
     // Convert the complex result back to PCM samples
+    size_t N = m_fftResult.size();
+    m_pcmSamples.resize(N);
     for (size_t i = 0; i < N; ++i) {
         m_pcmSamples[i] = static_cast<short>(std::real(m_fftResult[i]));
     }
@@ -251,6 +262,21 @@ void PCMVisualizer::renderFrequencyDomain() {
     SDL_RenderPresent(m_renderer);
 }
 
+void PCMVisualizer::writePCMToFile() {
+    std::ofstream outFile("AUDIO-AFTER.pcm", std::ios::binary);
+    if (!outFile) {
+        std::cerr << "Error opening output file: AUDIO-AFTER.pcm" << std::endl;
+        return;
+    }
+
+    // Write PCM samples to the file
+    for (size_t i = 0; i < m_pcmSamples.size(); ++i) {
+        outFile.write(reinterpret_cast<const char*>(&m_pcmSamples[i]), sizeof(short));
+    }
+
+    outFile.close();
+}
+
 void PCMVisualizer::run() {
     bool running = true;
     SDL_Event event;
@@ -264,15 +290,26 @@ void PCMVisualizer::run() {
 
         renderWaveform();
         SDL_Delay(3000);
+
+        // Write PCM data to file "AUDIO-AFTER"
+        writePCMToFile();
+
         renderFrequencyDomain();
         SDL_Delay(3000); // Approx. 3 seconds
 
         // Add tone removal here for demonstration
-        // Assuming a sample rate of 44100 Hz and a target frequency of 1000 Hz
-        removeTone(1000.0, 44100.0);
+        // Assuming a sample rate of 8000 Hz and a target frequency of 1000 Hz
+        removeTone(1246.0, 271872.0);
+
         renderFrequencyDomain();
-        SDL_Delay(5000); // Approx. 5 seconds
+        SDL_Delay(3000); // Approx. 3 seconds
+
+        // Convert back to time domain after removing tone
+        convertFrequencyToTimeDomain();
+
+
         renderWaveform();
+        SDL_Delay(3000);
 
         // Exit the loop after the final render
         running = false;
