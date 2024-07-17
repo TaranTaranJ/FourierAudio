@@ -22,7 +22,7 @@ private:
     void computeFFT();
     void FFT1D(std::vector<complexArr>& x);
     void IFFT1D(std::vector<complexArr>& x);
-    void removeTone(double targetFrequency, double sampleRate);
+    void removeTone(double targetFrequency, double sampleRate, double bandwidth);
     void renderWaveform();
     void renderFrequencyDomain();
     void convertFrequencyToTimeDomain();
@@ -140,6 +140,7 @@ void PCMVisualizer::FFT1D(std::vector<complexArr>& x) {
     }
 }
 
+
 void PCMVisualizer::IFFT1D(std::vector<complexArr>& x) {
     // Conjugate the complex numbers
     for (auto& elem : x) {
@@ -159,25 +160,51 @@ void PCMVisualizer::IFFT1D(std::vector<complexArr>& x) {
     for (auto& val : x) {
         val /= N;
     }
+
+    std::cout << "Performed IFFT on " << N << " samples." << std::endl;
 }
 
-void PCMVisualizer::removeTone(double targetFrequency, double sampleRate) {
+void PCMVisualizer::removeTone(double targetFrequency, double sampleRate, double bandwidth) {
     size_t N = m_fftResult.size();
     double binWidth = sampleRate / static_cast<double>(N); // Frequency resolution per bin
 
     // Calculate the index of the target frequency in the FFT result
     size_t targetIndex = static_cast<size_t>(targetFrequency / binWidth);
+    size_t bandwidthBins = static_cast<size_t>(bandwidth / binWidth); // Number of bins to zero out around the target frequency
 
-    // Ensure the targetIndex is within valid bounds
+    // Ensure the targetIndex and bandwidthBins are within valid bounds
     if (targetIndex < N) {
-        m_fftResult[targetIndex] = 0; // Zero out the target frequency bin
+        std::cout << "Target frequency: " << targetFrequency << " Hz" << std::endl;
+        std::cout << "Bin width: " << binWidth << " Hz" << std::endl;
+        std::cout << "Target index: " << targetIndex << std::endl;
+        std::cout << "Bandwidth bins: " << bandwidthBins << std::endl;
 
-        // Since FFT result is symmetric, also zero out the corresponding negative frequency bin
-        if (targetIndex != 0 && targetIndex != N - 1) {
-            m_fftResult[N - targetIndex] = 0;
+        // Zero out the target frequency bin and its neighbors within the bandwidth
+        for (size_t i = 0; i <= bandwidthBins; ++i) {
+            if (targetIndex + i < N) {
+                m_fftResult[targetIndex + i] = 0;
+            }
+            if (targetIndex >= i) {
+                m_fftResult[targetIndex - i] = 0;
+            }
         }
+
+        // Since FFT result is symmetric, also zero out the corresponding negative frequency bins
+        if (targetIndex != 0 && targetIndex != N - 1) {
+            for (size_t i = 0; i <= bandwidthBins; ++i) {
+                if (N - targetIndex + i < N) {
+                    m_fftResult[N - targetIndex + i] = 0;
+                }
+                if (N - targetIndex >= i) {
+                    m_fftResult[N - targetIndex - i] = 0;
+                }
+            }
+        }
+    } else {
+        std::cerr << "Target index out of bounds: " << targetIndex << std::endl;
     }
 }
+
 
 void PCMVisualizer::convertFrequencyToTimeDomain() {
     IFFT1D(m_fftResult);
@@ -188,6 +215,8 @@ void PCMVisualizer::convertFrequencyToTimeDomain() {
     for (size_t i = 0; i < N; ++i) {
         m_pcmSamples[i] = static_cast<short>(std::real(m_fftResult[i]));
     }
+
+    std::cout << "Converted frequency domain back to time domain." << std::endl;
 }
 
 void PCMVisualizer::renderWaveform() {
@@ -236,10 +265,12 @@ void PCMVisualizer::renderFrequencyDomain() {
     float x_scale = static_cast<float>(WINDOW_WIDTH) / static_cast<float>(numBins);
 
     float maxMagnitude = 0.0f;
+    size_t maxIndex = 0;
     for (size_t i = 0; i < numBins; ++i) {
         float magnitude = std::abs(m_fftResult[i]);
         if (magnitude > maxMagnitude) {
             maxMagnitude = magnitude;
+            maxIndex = i;
         }
     }
 
@@ -260,7 +291,14 @@ void PCMVisualizer::renderFrequencyDomain() {
     }
 
     SDL_RenderPresent(m_renderer);
+
+    double sampleRate = 271872.0; // Use the actual sample rate here
+    double binWidth = sampleRate / static_cast<double>(m_fftResult.size());
+    double peakFrequency = maxIndex * binWidth;
+
+    std::cout << "Largest spike frequency: " << peakFrequency << " Hz" << std::endl;
 }
+
 
 void PCMVisualizer::writePCMToFile() {
     std::ofstream outFile("AUDIO-AFTER.pcm", std::ios::binary);
@@ -277,6 +315,7 @@ void PCMVisualizer::writePCMToFile() {
     outFile.close();
 }
 
+
 void PCMVisualizer::run() {
     bool running = true;
     SDL_Event event;
@@ -291,15 +330,12 @@ void PCMVisualizer::run() {
         renderWaveform();
         SDL_Delay(3000);
 
-        // Write PCM data to file "AUDIO-AFTER"
-        writePCMToFile();
-
         renderFrequencyDomain();
         SDL_Delay(3000); // Approx. 3 seconds
 
         // Add tone removal here for demonstration
-        // Assuming a sample rate of 8000 Hz and a target frequency of 1000 Hz
-        removeTone(1246.0, 271872.0);
+        // Assuming a sample rate of 271872 Hz, target frequency of 1244 Hz, and bandwidth of 20 Hz
+        removeTone(1244.0, 271872.0, 300.0);
 
         renderFrequencyDomain();
         SDL_Delay(3000); // Approx. 3 seconds
@@ -307,6 +343,8 @@ void PCMVisualizer::run() {
         // Convert back to time domain after removing tone
         convertFrequencyToTimeDomain();
 
+        // Write PCM data to file "AUDIO-AFTER"
+        writePCMToFile();
 
         renderWaveform();
         SDL_Delay(3000);
@@ -325,6 +363,7 @@ void PCMVisualizer::run() {
         }
     }
 }
+
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
