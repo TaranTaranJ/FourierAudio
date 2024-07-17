@@ -22,7 +22,7 @@ private:
     void computeFFT();
     void FFT1D(std::vector<complexArr>& x);
     void IFFT1D(std::vector<complexArr>& x);
-    void removeTone(double targetFrequency, double sampleRate, double bandwidth);
+    void removeTone();
     void renderWaveform();
     void renderFrequencyDomain();
     void convertFrequencyToTimeDomain();
@@ -32,9 +32,15 @@ private:
     SDL_Renderer* m_renderer;
     std::vector<short> m_pcmSamples;
     std::vector<complexArr> m_fftResult;
+
+    // User input parameters
+    double m_targetFrequency;
+    double m_sampleRate;
+    double m_bandwidth;
 };
 
-PCMVisualizer::PCMVisualizer(const char* filename) {
+PCMVisualizer::PCMVisualizer(const char* filename)
+        : m_targetFrequency(0.0), m_sampleRate(0.0), m_bandwidth(0.0) {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         std::cerr << "Failed to initialize SDL: " << SDL_GetError() << std::endl;
         exit(1);
@@ -140,7 +146,6 @@ void PCMVisualizer::FFT1D(std::vector<complexArr>& x) {
     }
 }
 
-
 void PCMVisualizer::IFFT1D(std::vector<complexArr>& x) {
     // Conjugate the complex numbers
     for (auto& elem : x) {
@@ -164,17 +169,17 @@ void PCMVisualizer::IFFT1D(std::vector<complexArr>& x) {
     std::cout << "Performed IFFT on " << N << " samples." << std::endl;
 }
 
-void PCMVisualizer::removeTone(double targetFrequency, double sampleRate, double bandwidth) {
+void PCMVisualizer::removeTone() {
     size_t N = m_fftResult.size();
-    double binWidth = sampleRate / static_cast<double>(N); // Frequency resolution per bin
+    double binWidth = m_sampleRate / static_cast<double>(N); // Frequency resolution per bin
 
     // Calculate the index of the target frequency in the FFT result
-    size_t targetIndex = static_cast<size_t>(targetFrequency / binWidth);
-    size_t bandwidthBins = static_cast<size_t>(bandwidth / binWidth); // Number of bins to zero out around the target frequency
+    size_t targetIndex = static_cast<size_t>(m_targetFrequency / binWidth);
+    size_t bandwidthBins = static_cast<size_t>(m_bandwidth / binWidth); // Number of bins to zero out around the target frequency
 
     // Ensure the targetIndex and bandwidthBins are within valid bounds
     if (targetIndex < N) {
-        std::cout << "Target frequency: " << targetFrequency << " Hz" << std::endl;
+        std::cout << "Target frequency: " << m_targetFrequency << " Hz" << std::endl;
         std::cout << "Bin width: " << binWidth << " Hz" << std::endl;
         std::cout << "Target index: " << targetIndex << std::endl;
         std::cout << "Bandwidth bins: " << bandwidthBins << std::endl;
@@ -204,7 +209,6 @@ void PCMVisualizer::removeTone(double targetFrequency, double sampleRate, double
         std::cerr << "Target index out of bounds: " << targetIndex << std::endl;
     }
 }
-
 
 void PCMVisualizer::convertFrequencyToTimeDomain() {
     IFFT1D(m_fftResult);
@@ -292,13 +296,11 @@ void PCMVisualizer::renderFrequencyDomain() {
 
     SDL_RenderPresent(m_renderer);
 
-    double sampleRate = 271872.0; // Use the actual sample rate here
-    double binWidth = sampleRate / static_cast<double>(m_fftResult.size());
+    double binWidth = m_sampleRate / static_cast<double>(m_fftResult.size());
     double peakFrequency = maxIndex * binWidth;
 
     std::cout << "Largest spike frequency: " << peakFrequency << " Hz" << std::endl;
 }
-
 
 void PCMVisualizer::writePCMToFile() {
     std::ofstream outFile("AUDIO-AFTER.pcm", std::ios::binary);
@@ -315,10 +317,29 @@ void PCMVisualizer::writePCMToFile() {
     outFile.close();
 }
 
-
 void PCMVisualizer::run() {
     bool running = true;
     SDL_Event event;
+
+    // Ask user if they want to use recommended parameters
+    char useRecommended;
+    std::cout << "Do you want to use recommended parameters? (y/n): ";
+    std::cin >> useRecommended;
+
+    if (useRecommended == 'y' || useRecommended == 'Y') {
+        // Use recommended parameters
+        m_targetFrequency = 1244.0;
+        m_sampleRate = 271872.0;
+        m_bandwidth = 300.0;
+    } else {
+        // Ask user for custom parameters
+        std::cout << "Enter target frequency (Hz): ";
+        std::cin >> m_targetFrequency;
+        std::cout << "Enter sample rate (Hz): ";
+        std::cin >> m_sampleRate;
+        std::cout << "Enter bandwidth (Hz): ";
+        std::cin >> m_bandwidth;
+    }
 
     while (running) {
         while (SDL_PollEvent(&event)) {
@@ -333,9 +354,8 @@ void PCMVisualizer::run() {
         renderFrequencyDomain();
         SDL_Delay(3000); // Approx. 3 seconds
 
-        // Add tone removal here for demonstration
-        // Assuming a sample rate of 271872 Hz, target frequency of 1244 Hz, and bandwidth of 20 Hz
-        removeTone(1244.0, 271872.0, 300.0);
+        // Perform tone removal using user-defined parameters
+        removeTone();
 
         renderFrequencyDomain();
         SDL_Delay(3000); // Approx. 3 seconds
