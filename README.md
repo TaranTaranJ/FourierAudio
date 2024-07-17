@@ -7,7 +7,13 @@
 2. Execution: ./PutPixel audio.pcm
    1. Replace audio.pcm with the files directory 
    2. Example: ./PutPixel /home/STUDENT ID/PutPixel/AUDIO-BEFORE.pcm
-   
+
+### The process in images
+![](/home/s5525995/PutPixel/step1.png)
+![](/home/s5525995/PutPixel/Step2.png)
+![](/home/s5525995/PutPixel/Step3.png)
+![](/home/s5525995/PutPixel/step4.png)
+
 ### Functionality:
 
 This program visualizes PCM (Pulse Code Modulation)
